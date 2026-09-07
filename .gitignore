@@ -12,5 +12,8 @@
 !.env.example
 !.env.*.example
 
+# Runtime state
 logs/
 config.json
+config.env
+*.local

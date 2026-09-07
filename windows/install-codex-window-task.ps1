@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
-    [string[]]$Times = @("07:00", "12:00", "17:00", "22:00"),
+    [string[]]$Times = @("06:29", "11:31"),
     [string]$TaskName = "Codex 5h Window Activator",
+    [string]$CodexPath,
     [switch]$RunNow
 )
 
@@ -14,38 +15,50 @@ if (-not (Test-Path $RunnerPath)) {
     throw "Runner script not found: $RunnerPath"
 }
 
-# Prefer the native executable when available, then fall back to whatever
-# `codex` resolves to (for example an npm-generated .cmd/.ps1 shim).
-$CodexCommand = Get-Command codex.exe -ErrorAction SilentlyContinue
-if ($null -eq $CodexCommand) {
-    $CodexCommand = Get-Command codex -ErrorAction SilentlyContinue
-}
+if ([string]::IsNullOrWhiteSpace($CodexPath)) {
+    # Prefer the native executable when available, then fall back to whatever
+    # `codex` resolves to (for example an npm-generated .cmd/.ps1 shim).
+    $CodexCommand = Get-Command codex.exe -ErrorAction SilentlyContinue
+    if ($null -eq $CodexCommand) {
+        $CodexCommand = Get-Command codex -ErrorAction SilentlyContinue
+    }
 
-if ($null -eq $CodexCommand) {
-    throw @"
+    if ($null -eq $CodexCommand) {
+        throw @"
 Codex CLI was not found in PATH.
 
-Open a new PowerShell window and confirm this works first:
+Install it with:
+    npm install -g @openai/codex
+
+Then open a new PowerShell window and confirm:
     codex --version
     codex exec --skip-git-repo-check --ephemeral "Reply exactly: READY"
 
-Then run this installer again.
+Alternatively, rerun this installer with an explicit path:
+    .\install-codex-window-task.ps1 -CodexPath "C:\path\to\codex.cmd"
 "@
-}
+    }
 
-$CodexPath = $CodexCommand.Source
-if ([string]::IsNullOrWhiteSpace($CodexPath)) {
-    $CodexPath = $CodexCommand.Path
+    $CodexPath = $CodexCommand.Source
+    if ([string]::IsNullOrWhiteSpace($CodexPath)) {
+        $CodexPath = $CodexCommand.Path
+    }
 }
 
 if ([string]::IsNullOrWhiteSpace($CodexPath)) {
     throw "Could not resolve the full path of the Codex CLI."
 }
 
+if (-not (Test-Path $CodexPath)) {
+    throw "Codex CLI path does not exist: $CodexPath"
+}
+
+$CodexPath = (Resolve-Path $CodexPath).Path
+
 $ParsedTimes = @()
 foreach ($Time in $Times) {
     if ($Time -notmatch '^([01]\d|2[0-3]):([0-5]\d)$') {
-        throw "Invalid time '$Time'. Use HH:mm, for example 07:00 or 22:00."
+        throw "Invalid time '$Time'. Use HH:mm, for example 06:29 or 11:31."
     }
 
     $Hour = [int]$Matches[1]
@@ -88,8 +101,9 @@ $Principal = New-ScheduledTaskPrincipal `
     -LogonType Interactive `
     -RunLevel Limited
 
+# Intentionally do NOT use -StartWhenAvailable. A late catch-up run would shift
+# the server-side usage window away from the configured clock time.
 $Settings = New-ScheduledTaskSettingsSet `
-    -StartWhenAvailable `
     -WakeToRun `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
@@ -113,8 +127,8 @@ Write-Host "Schedule  : $($Times -join ', ')"
 Write-Host "Runner    : $RunnerPath"
 Write-Host "Logs      : $(Join-Path $PSScriptRoot 'logs')"
 Write-Host ""
-Write-Host "The task runs in your Windows user session, so keep the PC on and your user logged in."
-Write-Host "If Windows was asleep at a scheduled time, StartWhenAvailable allows a missed run to start after resume."
+Write-Host "Missed executions are not replayed later, by design, so quota-window timing does not drift."
+Write-Host "WakeToRun is enabled, but actual wake behavior depends on Windows power settings and firmware."
 
 if ($RunNow) {
     Write-Host ""
