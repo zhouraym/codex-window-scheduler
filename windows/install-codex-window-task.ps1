@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string[]]$Times = @("06:29", "11:31"),
+    [string[]]$Times = @("07:00", "12:00", "17:00", "22:00"),
     [string]$TaskName = "Codex 5h Window Activator",
     [string]$CodexPath,
     [switch]$RunNow
@@ -58,7 +58,7 @@ $CodexPath = (Resolve-Path $CodexPath).Path
 $ParsedTimes = @()
 foreach ($Time in $Times) {
     if ($Time -notmatch '^([01]\d|2[0-3]):([0-5]\d)$') {
-        throw "Invalid time '$Time'. Use HH:mm, for example 06:29 or 11:31."
+        throw "Invalid time '$Time'. Use HH:mm, for example 07:00 or 22:00."
     }
 
     $Hour = [int]$Matches[1]

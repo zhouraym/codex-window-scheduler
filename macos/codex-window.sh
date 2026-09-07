@@ -104,10 +104,20 @@ if [ "$TIMED_OUT" -eq 1 ]; then
     exit 124
 fi
 
-if [ "$EXIT_CODE" -eq 0 ] && grep -Eq '"type"[[:space:]]*:[[:space:]]*"turn\.completed"' "$TMP_OUTPUT"; then
-    write_log "Codex window activation completed successfully. exit=$EXIT_CODE"
+# turn.completed is the primary success signal for this utility. Codex may emit
+# non-fatal model-manager/MCP diagnostics before or after the completed turn.
+# If the model turn completed, the quota-triggering request has already succeeded.
+if grep -Eq '"type"[[:space:]]*:[[:space:]]*"turn\.completed"' "$TMP_OUTPUT"; then
+    if [ "$EXIT_CODE" -eq 0 ]; then
+        write_log "Codex window activation completed successfully. exit=$EXIT_CODE"
+    else
+        write_log "Codex window activation completed successfully with non-fatal diagnostics. exit=$EXIT_CODE"
+    fi
     exit 0
 fi
 
 write_log "FAILED: Codex command did not report turn.completed. exit=$EXIT_CODE"
-exit "${EXIT_CODE:-1}"
+if [ "$EXIT_CODE" -ne 0 ]; then
+    exit "$EXIT_CODE"
+fi
+exit 1

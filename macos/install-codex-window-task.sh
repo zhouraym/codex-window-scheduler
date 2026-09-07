@@ -72,7 +72,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "${#TIMES[@]}" -eq 0 ]; then
-    TIMES=("06:29" "11:31")
+    TIMES=("07:00" "12:00" "17:00" "22:00")
 fi
 
 if ! [[ "$MAX_LATENESS_MINUTES" =~ ^[0-9]+$ ]]; then
@@ -86,7 +86,7 @@ fi
 
 for time_value in "${TIMES[@]}"; do
     if ! [[ "$time_value" =~ ^([01][0-9]|2[0-3]):([0-5][0-9])$ ]]; then
-        echo "Invalid time '$time_value'. Use HH:mm, for example 06:29 or 11:31." >&2
+        echo "Invalid time '$time_value'. Use HH:mm, for example 07:00 or 22:00." >&2
         exit 2
     fi
 done

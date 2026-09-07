@@ -16,10 +16,19 @@ The goal is to make the first Codex request happen near chosen clock times so th
 
 The default schedule is:
 
+- `07:00`
+- `12:00`
+- `17:00`
+- `22:00`
+
+These are general-purpose defaults. You can replace them with any `HH:mm` schedule that fits your own work pattern.
+
+For example, a custom two-window schedule can be:
+
 - `06:29`
 - `11:31`
 
-The 2-minute buffer beyond exactly five hours helps avoid firing the second request on the reset boundary.
+The custom example leaves a small buffer beyond exactly five hours between the two requests.
 
 ## Prerequisites
 
@@ -51,7 +60,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-codex-window-task.ps1
 ```
 
-Install with custom times:
+Install with custom times, for example:
 
 ```powershell
 .\install-codex-window-task.ps1 -Times "06:29","11:31"
@@ -132,7 +141,7 @@ chmod +x *.sh
 ./install-codex-window-task.sh
 ```
 
-Install with custom times:
+Install with custom times, for example:
 
 ```bash
 ./install-codex-window-task.sh 06:29 11:31
@@ -199,7 +208,7 @@ Remove the LaunchAgent plus generated config/logs:
 
 ### macOS scheduling behavior
 
-`launchd`'s `StartCalendarInterval` can replay a missed calendar event after the Mac wakes from sleep. That behavior is undesirable for quota-window alignment, because a request scheduled for 06:29 but replayed at 09:00 would shift the window.
+`launchd`'s `StartCalendarInterval` can replay a missed calendar event after the Mac wakes from sleep. That behavior is undesirable for quota-window alignment, because a request scheduled for 07:00 but replayed at 09:00 would shift the window.
 
 The macOS runner therefore has a **late-run guard**. Scheduled invocations are accepted only within 5 minutes of a configured time by default; later wake-up replays are logged and skipped.
 
@@ -226,7 +235,30 @@ This project intentionally keeps the automation small:
 - It does not use private quota/reset endpoints.
 - It executes a normal authenticated Codex CLI request, so each activation consumes a small amount of real usage.
 - Keep the scripts in a directory only your user can modify: scheduled scripts are executable code, so anyone who can alter them can change what runs later.
-- The success log means the Codex request completed successfully; it cannot independently prove that the service created a new 5-hour quota window.
+- The success log means the Codex request produced a `turn.completed` event; it cannot independently prove that the service created a new 5-hour quota window.
+- Codex may print non-fatal diagnostics such as `failed to refresh available models` or MCP transport errors to stderr. These are preserved in the log but do not make the activation fail if `turn.completed` was received.
+- For this utility, `turn.completed` is intentionally treated as the primary success signal. A later cleanup/MCP error can produce a non-zero native exit code after the model turn has already completed.
+
+
+## Non-fatal Codex diagnostics
+
+A successful run may still contain lines such as:
+
+```text
+ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+ERROR rmcp::transport::worker: ... https://chatgpt.com/backend-api/ps/mcp
+```
+
+These messages come from auxiliary Codex components. If the JSONL stream contains:
+
+```json
+{"type":"turn.completed", ...}
+```
+
+the scheduler records the activation as successful and keeps the diagnostics in the log for troubleshooting.
+
+If `turn.completed` is absent, the scheduler treats the run as failed.
+
 
 ## Repository layout
 

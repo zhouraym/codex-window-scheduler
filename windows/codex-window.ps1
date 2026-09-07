@@ -44,9 +44,24 @@ try {
 
     # --skip-git-repo-check: allows this tiny request to run outside a Git repo.
     # --ephemeral: do not persist a normal Codex session for this scheduled health check.
-    # --json: emit JSONL events so success and token usage can be parsed reliably.
-    $RawOutput = & $CodexPath exec --skip-git-repo-check --ephemeral --json $Prompt 2>&1
-    $ExitCode = $LASTEXITCODE
+    # --json: emit JSONL events so success can be detected from turn.completed.
+    #
+    # Codex can emit non-fatal diagnostics to stderr, for example:
+    #   codex_models_manager::manager: failed to refresh available models
+    #   rmcp::transport::worker: worker quit with fatal ...
+    #
+    # Windows PowerShell 5.1 can convert native stderr output into ErrorRecord objects.
+    # Do not let those diagnostics terminate this wrapper. Capture them in the log and
+    # decide activation success from the Codex JSON event stream instead.
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $RawOutput = & $CodexPath exec --skip-git-repo-check --ephemeral --json $Prompt 2>&1
+        $ExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+    }
 
     $Lines = @($RawOutput | ForEach-Object { $_.ToString() })
 
@@ -67,7 +82,11 @@ try {
         }
     }
 
-    if ($ExitCode -eq 0 -and $null -ne $CompletedEvent) {
+    # For this tool, turn.completed is the primary success signal: it proves that
+    # the model turn completed. A later MCP/model-manager cleanup failure may still
+    # make the native process exit non-zero even though the quota-triggering request
+    # has already succeeded.
+    if ($null -ne $CompletedEvent) {
         $InputTokens = 0
         $CachedInputTokens = 0
         $OutputTokens = 0
@@ -84,11 +103,16 @@ try {
             }
         }
 
-        Write-Log "Codex window activation completed successfully. exit=$ExitCode, input_tokens=$InputTokens, cached_input_tokens=$CachedInputTokens, output_tokens=$OutputTokens"
+        if ($ExitCode -eq 0) {
+            Write-Log "Codex window activation completed successfully. exit=$ExitCode, input_tokens=$InputTokens, cached_input_tokens=$CachedInputTokens, output_tokens=$OutputTokens"
+        }
+        else {
+            Write-Log "Codex window activation completed successfully with non-fatal diagnostics. exit=$ExitCode, input_tokens=$InputTokens, cached_input_tokens=$CachedInputTokens, output_tokens=$OutputTokens"
+        }
         exit 0
     }
 
-    Write-Log "Codex command did not report turn.completed. exit=$ExitCode"
+    Write-Log "FAILED: Codex command did not report turn.completed. exit=$ExitCode"
     exit $(if ($ExitCode -ne 0) { $ExitCode } else { 1 })
 }
 catch {
